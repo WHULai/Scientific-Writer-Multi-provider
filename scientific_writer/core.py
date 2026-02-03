@@ -3,6 +3,7 @@
 import os
 import shutil
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
@@ -32,12 +33,120 @@ def setup_claude_skills(package_dir: Path, work_dir: Path) -> None:
     # Note: No warning prints - keep API output clean
 
 
-def get_api_key(api_key: Optional[str] = None) -> str:
+@dataclass(frozen=True)
+class ProviderConfig:
+    provider: str
+    api_key: str
+    base_url: Optional[str]
+
+OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
+DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
+
+
+def resolve_provider_config(
+    provider: Optional[str] = None,
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+) -> ProviderConfig:
     """
-    Get the Anthropic API key.
+    Resolve provider configuration from explicit args or environment variables.
+    
+    Environment variables (in order of precedence):
+      - SCIENTIFIC_WRITER_PROVIDER (default: "anthropic")
+      - SCIENTIFIC_WRITER_API_KEY
+      - SCIENTIFIC_WRITER_BASE_URL
+      - ANTHROPIC_API_KEY (fallback when provider is anthropic)
+      - OPENAI_API_KEY (fallback when provider is openai)
+      - DEEPSEEK_API_KEY (fallback when provider is deepseek)
+      - OPENAI_BASE_URL / DEEPSEEK_BASE_URL (fallback base URLs)
+    
+    Returns:
+        ProviderConfig with provider, api_key, base_url.
+        
+    Raises:
+        ValueError: If provider is unsupported or API key is missing.
+    """
+    resolved_provider = (provider or os.getenv("SCIENTIFIC_WRITER_PROVIDER") or "anthropic").strip().lower()
+    resolved_api_key = api_key or os.getenv("SCIENTIFIC_WRITER_API_KEY")
+    resolved_base_url = base_url or os.getenv("SCIENTIFIC_WRITER_BASE_URL")
+    
+    if resolved_provider == "anthropic":
+        if not resolved_api_key:
+            resolved_api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not resolved_api_key:
+            raise ValueError(
+                "API key not found. Set SCIENTIFIC_WRITER_API_KEY or ANTHROPIC_API_KEY "
+                "for provider=anthropic."
+            )
+        # Ensure SDK can read expected environment variables
+        os.environ["ANTHROPIC_API_KEY"] = resolved_api_key
+        if resolved_base_url:
+            os.environ["ANTHROPIC_BASE_URL"] = resolved_base_url
+        return ProviderConfig(
+            provider=resolved_provider,
+            api_key=resolved_api_key,
+            base_url=resolved_base_url,
+        )
+    
+    if resolved_provider == "openai":
+        if not resolved_api_key:
+            resolved_api_key = os.getenv("OPENAI_API_KEY")
+        if not resolved_api_key:
+            raise ValueError(
+                "API key not found. Set SCIENTIFIC_WRITER_API_KEY or OPENAI_API_KEY "
+                "for provider=openai."
+            )
+        if not resolved_base_url:
+            resolved_base_url = os.getenv("OPENAI_BASE_URL") or OPENAI_DEFAULT_BASE_URL
+        # Provide compatibility env vars for OpenAI-compatible SDKs
+        os.environ["OPENAI_API_KEY"] = resolved_api_key
+        if resolved_base_url:
+            os.environ["OPENAI_BASE_URL"] = resolved_base_url
+        return ProviderConfig(
+            provider=resolved_provider,
+            api_key=resolved_api_key,
+            base_url=resolved_base_url,
+        )
+    
+    if resolved_provider == "deepseek":
+        if not resolved_api_key:
+            resolved_api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if not resolved_api_key:
+            raise ValueError(
+                "API key not found. Set SCIENTIFIC_WRITER_API_KEY or DEEPSEEK_API_KEY "
+                "for provider=deepseek."
+            )
+        if not resolved_base_url:
+            resolved_base_url = os.getenv("DEEPSEEK_BASE_URL") or DEEPSEEK_DEFAULT_BASE_URL
+        # Provide compatibility env vars for OpenAI-compatible SDKs
+        os.environ["OPENAI_API_KEY"] = resolved_api_key
+        if resolved_base_url:
+            os.environ["OPENAI_BASE_URL"] = resolved_base_url
+        return ProviderConfig(
+            provider=resolved_provider,
+            api_key=resolved_api_key,
+            base_url=resolved_base_url,
+        )
+    
+    raise ValueError(
+        f"Unsupported provider '{resolved_provider}'. "
+        "Supported providers: 'anthropic', 'openai', 'deepseek'. "
+        "Set SCIENTIFIC_WRITER_PROVIDER accordingly."
+    )
+
+
+def get_api_key(
+    api_key: Optional[str] = None,
+    provider: Optional[str] = None,
+    base_url: Optional[str] = None,
+) -> str:
+    """
+    Backward-compatible API key resolver.
     
     Args:
         api_key: Optional API key to use. If not provided, reads from environment.
+        provider: Optional provider name (default via env).
+        base_url: Optional base URL (default via env).
         
     Returns:
         The API key.
@@ -45,16 +154,7 @@ def get_api_key(api_key: Optional[str] = None) -> str:
     Raises:
         ValueError: If API key is not found.
     """
-    if api_key:
-        return api_key
-    
-    env_key = os.getenv("ANTHROPIC_API_KEY")
-    if not env_key:
-        raise ValueError(
-            "ANTHROPIC_API_KEY not found. Either pass api_key parameter or set "
-            "ANTHROPIC_API_KEY environment variable."
-        )
-    return env_key
+    return resolve_provider_config(provider=provider, api_key=api_key, base_url=base_url).api_key
 
 
 def load_system_instructions(work_dir: Path) -> str:
@@ -391,4 +491,3 @@ def create_data_context_message(processed_info: Optional[Dict[str, Any]]) -> str
     context_parts.append("[END DATA FILES]\n")
     
     return "\n".join(context_parts)
-

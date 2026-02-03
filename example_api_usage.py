@@ -5,7 +5,7 @@ Example: Using the Scientific Writer programmatic API
 This example demonstrates how to use the scientific_writer package
 to generate papers programmatically in your own Python code.
 
-Make sure you have set your ANTHROPIC_API_KEY environment variable
+Make sure you have set your SCIENTIFIC_WRITER_PROVIDER and SCIENTIFIC_WRITER_API_KEY
 or pass it as a parameter to generate_paper().
 """
 
@@ -137,7 +137,7 @@ async def error_handling_example():
     
     except ValueError as e:
         print(f"❌ Configuration error: {e}")
-        print("Make sure ANTHROPIC_API_KEY is set!")
+        print("Make sure SCIENTIFIC_WRITER_API_KEY is set!")
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
 
@@ -207,10 +207,12 @@ async def main():
     #     await token_tracking_example()
     
     print("NOTE: To actually run examples, uncomment the code in main()")
-    print("      and ensure ANTHROPIC_API_KEY is set in your environment.")
+    print("      and ensure SCIENTIFIC_WRITER_API_KEY is set in your environment.")
     print()
     print("Quick start:")
-    print("  1. Set your API key: export ANTHROPIC_API_KEY='your_key'")
+    print("  1. Set your provider and API key:")
+    print("     export SCIENTIFIC_WRITER_PROVIDER='anthropic'")
+    print("     export SCIENTIFIC_WRITER_API_KEY='your_key'")
     print("  2. Edit this file and uncomment the example code")
     print("  3. Run: python example_api_usage.py")
     print()

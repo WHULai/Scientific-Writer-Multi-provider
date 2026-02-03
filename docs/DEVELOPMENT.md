@@ -70,7 +70,12 @@ uv sync
 
 Environment variables:
 
-- `ANTHROPIC_API_KEY` (required)
+- `SCIENTIFIC_WRITER_PROVIDER` (default: `anthropic`)
+- `SCIENTIFIC_WRITER_API_KEY` (required)
+- `SCIENTIFIC_WRITER_BASE_URL` (optional, proxy/gateway)
+- `ANTHROPIC_API_KEY` (legacy fallback when provider is `anthropic`)
+- `OPENAI_API_KEY` (legacy fallback when provider is `openai`)
+- `DEEPSEEK_API_KEY` (legacy fallback when provider is `deepseek`)
 - `OPENROUTER_API_KEY` (optional, for research lookup)
 
 ### Run
@@ -206,5 +211,3 @@ For best IDE experience:
 - `Docs/SKILLS.md` — skills overview
 - `CHANGELOG.md` — release history
 - `CLAUDE.md` — system instructions (kept at root)
-
-

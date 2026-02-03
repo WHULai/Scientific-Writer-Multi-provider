@@ -14,7 +14,12 @@ Scientific Writer performs comprehensive research before writing, ensuring every
 
 ### Prerequisites
 - Python 3.10-3.12
-- ANTHROPIC_API_KEY (required), OPENROUTER_API_KEY (optional for research lookup)
+- Provider configuration (required for generation):
+  - `SCIENTIFIC_WRITER_PROVIDER` (default: `anthropic`)
+  - `SCIENTIFIC_WRITER_API_KEY`
+  - `SCIENTIFIC_WRITER_BASE_URL` (optional, for proxy/gateway)
+  - Supported providers: `anthropic`, `openai`, `deepseek` (OpenAI-compatible)
+- `OPENROUTER_API_KEY` (optional for research lookup)
 
 ### Installation Options
 
@@ -33,13 +38,34 @@ cd claude-scientific-writer
 uv sync
 ```
 
-### Configure API keys
+### Configure Provider + API Keys
 ```bash
 # .env file (recommended)
-echo "ANTHROPIC_API_KEY=your_key" > .env
+echo "SCIENTIFIC_WRITER_PROVIDER=anthropic" > .env
+echo "SCIENTIFIC_WRITER_API_KEY=your_key" >> .env
+echo "SCIENTIFIC_WRITER_BASE_URL=https://api.anthropic.com" >> .env  # optional
 echo "OPENROUTER_API_KEY=your_openrouter_key" >> .env
 # or export in your shell
-export ANTHROPIC_API_KEY='your_key'
+export SCIENTIFIC_WRITER_PROVIDER='anthropic'
+export SCIENTIFIC_WRITER_API_KEY='your_key'
+export SCIENTIFIC_WRITER_BASE_URL='https://api.anthropic.com'  # optional
+```
+
+Notes:
+- Supported providers: `anthropic`, `openai`, `deepseek` (OpenAI-compatible).
+- If `SCIENTIFIC_WRITER_PROVIDER` is unset, it defaults to `anthropic`.
+
+Examples:
+```bash
+# OpenAI
+export SCIENTIFIC_WRITER_PROVIDER='openai'
+export SCIENTIFIC_WRITER_API_KEY='your_openai_key'
+export SCIENTIFIC_WRITER_BASE_URL='https://api.openai.com/v1'
+
+# DeepSeek
+export SCIENTIFIC_WRITER_PROVIDER='deepseek'
+export SCIENTIFIC_WRITER_API_KEY='your_deepseek_key'
+export SCIENTIFIC_WRITER_BASE_URL='https://api.deepseek.com/v1'
 ```
 
 ### Usage Options

@@ -44,6 +44,8 @@ async def generate_paper(
     query: str,
     output_dir: Optional[str] = None,
     api_key: Optional[str] = None,
+    provider: Optional[str] = None,
+    base_url: Optional[str] = None,
     model: str = "claude-sonnet-4-20250514",
     data_files: Optional[List[str]] = None,
     cwd: Optional[str] = None,
@@ -57,7 +59,9 @@ async def generate_paper(
 |-----------|------|----------|---------|-------------|
 | `query` | `str` | Yes | - | The paper generation request (e.g., "Create a Nature paper on CRISPR") |
 | `output_dir` | `str` | No | `None` | Custom output directory. Defaults to `cwd/writing_outputs` |
-| `api_key` | `str` | No | `None` | Anthropic API key. Defaults to `ANTHROPIC_API_KEY` env var |
+| `api_key` | `str` | No | `None` | API key. Defaults to `SCIENTIFIC_WRITER_API_KEY` or `ANTHROPIC_API_KEY` |
+| `provider` | `str` | No | `None` | Provider name. Defaults to `SCIENTIFIC_WRITER_PROVIDER` or `anthropic` (`anthropic`, `openai`, `deepseek`) |
+| `base_url` | `str` | No | `None` | Base URL override (proxy/gateway). Defaults to `SCIENTIFIC_WRITER_BASE_URL` |
 | `model` | `str` | No | `"claude-sonnet-4-20250514"` | Claude model to use |
 | `data_files` | `List[str]` | No | `None` | List of file paths to include in the paper |
 | `cwd` | `str` | No | `None` | Working directory. Defaults to package parent directory |
@@ -318,10 +322,12 @@ async def with_error_handling():
 
 ```python
 async def with_custom_api_key():
-    # Override ANTHROPIC_API_KEY environment variable
+    # Override provider configuration from code
     async for update in generate_paper(
         "Create a paper",
-        api_key="sk-ant-your-api-key-here"
+        provider="anthropic",
+        api_key="sk-ant-your-api-key-here",
+        base_url="https://api.anthropic.com"
     ):
         # Process updates...
         pass
@@ -357,10 +363,21 @@ async def list_all_files():
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes* | Your Anthropic API key for Scientific-Writer |
+| `SCIENTIFIC_WRITER_PROVIDER` | No | Provider name (default: `anthropic`) |
+| `SCIENTIFIC_WRITER_API_KEY` | Yes* | API key for the selected provider |
+| `SCIENTIFIC_WRITER_BASE_URL` | No | Base URL override (proxy/gateway) |
+| `ANTHROPIC_API_KEY` | Yes* | Legacy fallback when provider is `anthropic` |
+| `OPENAI_API_KEY` | Yes* | Legacy fallback when provider is `openai` |
+| `DEEPSEEK_API_KEY` | Yes* | Legacy fallback when provider is `deepseek` |
+| `OPENAI_BASE_URL` | No | Legacy base URL fallback for `openai` |
+| `DEEPSEEK_BASE_URL` | No | Legacy base URL fallback for `deepseek` |
 | `OPENROUTER_API_KEY` | No | For real-time research lookup via Perplexity Sonar Pro Search |
 
-\* Can be overridden by passing `api_key` parameter to `generate_paper()`
+\* Can be overridden by passing `api_key` (and optionally `provider`/`base_url`) to `generate_paper()`
+
+Notes:
+- Supported providers: `anthropic`, `openai`, `deepseek` (OpenAI-compatible).
+- If `SCIENTIFIC_WRITER_PROVIDER` is unset, it defaults to `anthropic`.
 
 ### Research Lookup
 
@@ -670,5 +687,3 @@ async def generate_multiple_parallel():
 - [FEATURES.md](FEATURES.md) - Complete features guide
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Troubleshooting issues
 - [example_api_usage.py](../example_api_usage.py) - Complete code examples
-
-

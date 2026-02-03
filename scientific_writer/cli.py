@@ -8,15 +8,26 @@ import os
 import sys
 import time
 import asyncio
+import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 from dotenv import load_dotenv
 
 from claude_agent_sdk import query, ClaudeAgentOptions
 from claude_agent_sdk.types import HookMatcher, StopHookInput, HookContext
 
+from .api import (
+    _openai_tools_schema,
+    _augment_system_instructions_for_openai,
+    _normalize_openai_base_url,
+    _openai_chat_completion,
+    _execute_openai_tool,
+    OPENAI_EFFORT_LEVEL_MODELS,
+    DEEPSEEK_EFFORT_LEVEL_MODELS,
+)
+
 from .core import (
-    get_api_key,
+    resolve_provider_config,
     load_system_instructions,
     ensure_output_folder,
     get_data_files,
@@ -74,9 +85,9 @@ async def main(track_token_usage: bool = False) -> Optional[TokenUsage]:
     if env_file.exists():
         load_dotenv(dotenv_path=env_file, override=True)
     
-    # Get API key (verify it exists)
+    # Resolve provider configuration (verify it exists)
     try:
-        get_api_key()
+        provider_config = resolve_provider_config()
     except ValueError as e:
         print(f"Error: {e}")
         sys.exit(1)
@@ -117,24 +128,37 @@ IMPORTANT - CONVERSATION CONTINUITY:
     # Default to True to ensure tasks complete fully
     auto_continue = os.environ.get("SCIENTIFIC_WRITER_AUTO_CONTINUE", "true").lower() in ("true", "1", "yes")
     
-    # Configure agent options with stop hook for completion checking
-    options = ClaudeAgentOptions(
-        system_prompt=system_instructions,
-        model="claude-sonnet-4-5",
-        allowed_tools=["Read", "Write", "Edit", "Bash", "WebSearch", "research-lookup"],
-        permission_mode="bypassPermissions",  # Execute immediately without approval prompts
-        setting_sources=["project"],  # Load skills from project .claude directory
-        cwd=str(cwd),  # Set working directory to user's current directory
-        max_turns=500,  # Allow many turns for long document generation
-        hooks={
-            "Stop": [
-                HookMatcher(
-                    matcher=None,  # Match all stop events
-                    hooks=[create_completion_check_stop_hook(auto_continue=auto_continue)],
-                )
-            ]
-        },
-    )
+    # Resolve model for CLI
+    model_env = os.environ.get("SCIENTIFIC_WRITER_MODEL")
+    if model_env:
+        model_name = model_env
+    elif provider_config.provider == "openai":
+        model_name = OPENAI_EFFORT_LEVEL_MODELS["medium"]
+    elif provider_config.provider == "deepseek":
+        model_name = DEEPSEEK_EFFORT_LEVEL_MODELS["medium"]
+    else:
+        model_name = "claude-sonnet-4-5"
+    
+    options = None
+    if provider_config.provider == "anthropic":
+        # Configure agent options with stop hook for completion checking
+        options = ClaudeAgentOptions(
+            system_prompt=system_instructions,
+            model=model_name,
+            allowed_tools=["Read", "Write", "Edit", "Bash", "WebSearch", "research-lookup"],
+            permission_mode="bypassPermissions",  # Execute immediately without approval prompts
+            setting_sources=["project"],  # Load skills from project .claude directory
+            cwd=str(cwd),  # Set working directory to user's current directory
+            max_turns=500,  # Allow many turns for long document generation
+            hooks={
+                "Stop": [
+                    HookMatcher(
+                        matcher=None,  # Match all stop events
+                        hooks=[create_completion_check_stop_hook(auto_continue=auto_continue)],
+                    )
+                ]
+            },
+        )
     
     # Track conversation state
     current_paper_path = None
@@ -165,6 +189,9 @@ IMPORTANT - CONVERSATION CONTINUITY:
     print("  4. Progress tracked in real-time in progress.md")
     print(f"\n📁 Working directory: {cwd}")
     print(f"📁 Output folder: {output_folder}")
+    print(f"\n🔑 Provider: {provider_config.provider}")
+    if provider_config.base_url:
+        print(f"   Base URL: {provider_config.base_url}")
     print(f"\n📦 Data Files:")
     print("  • Place files in the 'data/' folder to include them in your paper")
     print("  • Manuscript files (.tex) → copied to drafts/ for EDITING")
@@ -282,19 +309,32 @@ IMPORTANT:
 Based on the user request: {user_input}"""
                 
                 # Send directory creation request
-                async for message in query(prompt=directory_prompt, options=options):
-                    # Track token usage silently
-                    if track_token_usage and hasattr(message, "usage") and message.usage:
-                        usage = message.usage
-                        total_input_tokens += getattr(usage, "input_tokens", 0)
-                        total_output_tokens += getattr(usage, "output_tokens", 0)
-                        total_cache_creation_tokens += getattr(usage, "cache_creation_input_tokens", 0)
-                        total_cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0)
-                    
-                    if hasattr(message, "content") and message.content:
-                        for block in message.content:
-                            if hasattr(block, "text"):
-                                print(block.text, end="", flush=True)
+                if provider_config.provider == "anthropic":
+                    async for message in query(prompt=directory_prompt, options=options):
+                        # Track token usage silently
+                        if track_token_usage and hasattr(message, "usage") and message.usage:
+                            usage = message.usage
+                            total_input_tokens += getattr(usage, "input_tokens", 0)
+                            total_output_tokens += getattr(usage, "output_tokens", 0)
+                            total_cache_creation_tokens += getattr(usage, "cache_creation_input_tokens", 0)
+                            total_cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0)
+                        
+                        if hasattr(message, "content") and message.content:
+                            for block in message.content:
+                                if hasattr(block, "text"):
+                                    print(block.text, end="", flush=True)
+                else:
+                    usage = await _run_openai_cli_prompt(
+                        prompt=directory_prompt,
+                        system_instructions=system_instructions,
+                        provider_config=provider_config,
+                        work_dir=cwd,
+                        package_dir=package_dir,
+                        model_name=model_name,
+                    )
+                    if track_token_usage:
+                        total_input_tokens += usage["input_tokens"]
+                        total_output_tokens += usage["output_tokens"]
                 
                 print("\n")
                 
@@ -417,20 +457,33 @@ User request: {user_input}"""
             
             # Send query
             print()  # Add blank line before response
-            async for message in query(prompt=contextual_prompt, options=options):
-                # Track token usage silently
-                if track_token_usage and hasattr(message, "usage") and message.usage:
-                    usage = message.usage
-                    total_input_tokens += getattr(usage, "input_tokens", 0)
-                    total_output_tokens += getattr(usage, "output_tokens", 0)
-                    total_cache_creation_tokens += getattr(usage, "cache_creation_input_tokens", 0)
-                    total_cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0)
-                
-                # Handle AssistantMessage with content blocks
-                if hasattr(message, "content") and message.content:
-                    for block in message.content:
-                        if hasattr(block, "text"):
-                            print(block.text, end="", flush=True)
+            if provider_config.provider == "anthropic":
+                async for message in query(prompt=contextual_prompt, options=options):
+                    # Track token usage silently
+                    if track_token_usage and hasattr(message, "usage") and message.usage:
+                        usage = message.usage
+                        total_input_tokens += getattr(usage, "input_tokens", 0)
+                        total_output_tokens += getattr(usage, "output_tokens", 0)
+                        total_cache_creation_tokens += getattr(usage, "cache_creation_input_tokens", 0)
+                        total_cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0)
+                    
+                    # Handle AssistantMessage with content blocks
+                    if hasattr(message, "content") and message.content:
+                        for block in message.content:
+                            if hasattr(block, "text"):
+                                print(block.text, end="", flush=True)
+            else:
+                usage = await _run_openai_cli_prompt(
+                    prompt=contextual_prompt,
+                    system_instructions=system_instructions,
+                    provider_config=provider_config,
+                    work_dir=cwd,
+                    package_dir=package_dir,
+                    model_name=model_name,
+                )
+                if track_token_usage:
+                    total_input_tokens += usage["input_tokens"]
+                    total_output_tokens += usage["output_tokens"]
             
             print()  # Add blank line after response
             
@@ -474,6 +527,71 @@ def _print_help():
     print("\n" + "=" * 70)
     print("HELP - Scientific Writer CLI")
     print("=" * 70)
+
+
+async def _run_openai_cli_prompt(
+    prompt: str,
+    system_instructions: str,
+    provider_config,
+    work_dir: Path,
+    package_dir: Path,
+    model_name: str,
+) -> Dict[str, int]:
+    tools = _openai_tools_schema()
+    system_prompt = _augment_system_instructions_for_openai(system_instructions, work_dir)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt},
+    ]
+    base_url = _normalize_openai_base_url(provider_config.provider, provider_config.base_url)
+    input_tokens = 0
+    output_tokens = 0
+    
+    for _ in range(500):
+        response = await _openai_chat_completion(
+            base_url=base_url,
+            api_key=provider_config.api_key,
+            model=model_name,
+            messages=messages,
+            tools=tools,
+        )
+        usage = response.get("usage") or {}
+        input_tokens += int(usage.get("prompt_tokens", usage.get("input_tokens", 0)) or 0)
+        output_tokens += int(usage.get("completion_tokens", usage.get("output_tokens", 0)) or 0)
+        
+        choice = response.get("choices", [{}])[0].get("message", {})
+        content = choice.get("content") or ""
+        tool_calls = choice.get("tool_calls") or []
+        
+        assistant_message = {"role": "assistant"}
+        if content:
+            assistant_message["content"] = content
+            print(content, end="", flush=True)
+        if tool_calls:
+            assistant_message["tool_calls"] = tool_calls
+        messages.append(assistant_message)
+        
+        if not tool_calls:
+            break
+        
+        for tool_call in tool_calls:
+            function = tool_call.get("function", {})
+            name = function.get("name", "")
+            raw_args = function.get("arguments", "{}")
+            try:
+                args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+            except json.JSONDecodeError:
+                args = {"_raw": raw_args}
+            result = _execute_openai_tool(name, args, work_dir, package_dir)
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.get("id"),
+                    "content": result,
+                }
+            )
+    
+    return {"input_tokens": input_tokens, "output_tokens": output_tokens}
     print("\n📝 What I Can Do:")
     print("  • Create complete scientific papers (LaTeX, Word, Markdown)")
     print("  • Literature reviews with citation management")
@@ -527,6 +645,10 @@ def _print_help():
     print("  • I'll find the most relevant paper/presentation based on topic matching")
     print("  • Say 'new paper' or 'start fresh' to explicitly begin a new one")
     print("  • Current working paper/presentation is tracked throughout the session")
+    print("\n🔑 Provider Configuration (env vars):")
+    print("  • SCIENTIFIC_WRITER_PROVIDER=anthropic")
+    print("  • SCIENTIFIC_WRITER_API_KEY=your_key")
+    print("  • SCIENTIFIC_WRITER_BASE_URL=https://api.anthropic.com  (optional)")
     print("=" * 70)
 
 
@@ -541,4 +663,3 @@ def cli_main():
 
 if __name__ == "__main__":
     cli_main()
-

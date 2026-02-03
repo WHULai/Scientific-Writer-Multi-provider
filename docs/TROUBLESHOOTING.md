@@ -175,31 +175,47 @@ Share this information when reporting the issue on GitHub or the SDK repository.
 
 ## API Key Issues
 
-### Problem: "ANTHROPIC_API_KEY environment variable not set"
+### Problem: "API key not found" / "ANTHROPIC_API_KEY environment variable not set"
 
 #### Solution 1: Create a .env file
 In the project root directory, create a `.env` file:
 ```bash
+SCIENTIFIC_WRITER_PROVIDER=anthropic
+SCIENTIFIC_WRITER_API_KEY=your_api_key_here
+# Optional
+SCIENTIFIC_WRITER_BASE_URL=https://api.anthropic.com
+
+# Legacy fallback (still supported)
 ANTHROPIC_API_KEY=your_api_key_here
 ```
 
 #### Solution 2: Export in your shell
 **Linux/macOS:**
 ```bash
-export ANTHROPIC_API_KEY='your_api_key_here'
+export SCIENTIFIC_WRITER_PROVIDER='anthropic'
+export SCIENTIFIC_WRITER_API_KEY='your_api_key_here'
+export SCIENTIFIC_WRITER_BASE_URL='https://api.anthropic.com'  # optional
 ```
 
 Add to `~/.bashrc`, `~/.zshrc`, or `~/.bash_profile` to make it permanent.
 
 **Windows (PowerShell):**
 ```powershell
-$env:ANTHROPIC_API_KEY='your_api_key_here'
+$env:SCIENTIFIC_WRITER_PROVIDER='anthropic'
+$env:SCIENTIFIC_WRITER_API_KEY='your_api_key_here'
+$env:SCIENTIFIC_WRITER_BASE_URL='https://api.anthropic.com'  # optional
 ```
 
 **Windows (Command Prompt):**
 ```cmd
-set ANTHROPIC_API_KEY=your_api_key_here
+set SCIENTIFIC_WRITER_PROVIDER=anthropic
+set SCIENTIFIC_WRITER_API_KEY=your_api_key_here
+set SCIENTIFIC_WRITER_BASE_URL=https://api.anthropic.com
 ```
+
+Notes:
+- For OpenAI: you can also set `OPENAI_API_KEY` (fallback).
+- For DeepSeek: you can also set `DEEPSEEK_API_KEY` (fallback).
 
 ### Getting Your API Key
 1. Go to [console.anthropic.com](https://console.anthropic.com/)
@@ -379,4 +395,3 @@ Found a solution to a problem not listed here? Please contribute!
 3. Submit a pull request
 
 Your contribution helps the community! 🙏
-
