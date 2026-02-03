@@ -29,7 +29,7 @@ This project is not affiliated with or endorsed by K-Dense-AI.
 
 ## Install From Source
 ```bash
-git clone <your-fork-url>
+git clone https://github.com/WHULai/Scientific-Writer-Multi-provider.git
 cd claude-scientific-writer
 uv sync
 ```
